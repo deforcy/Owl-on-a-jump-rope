@@ -1,0 +1,20 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "site.deforce.owl_on_a_jump_rope.mixin.client",
+  "compatibilityLevel": "JAVA_25",
+  "client": [
+    "CameraMixin",
+    "DeathScreenMixin",
+    "GameRendererInvoker",
+    "ScreenEffectRendererMixin",
+    "ScreenMixin",
+    "SoundManagerMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "overwrites": {
+    "requireAnnotations": true
+  }
+}

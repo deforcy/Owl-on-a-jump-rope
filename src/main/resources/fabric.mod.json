@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "owl_on_a_jump_rope",
+  "version": "${version}",
+  "name": "Owl on a jump rope",
+  "description": "Owl on a jump rope: a cursed card spawns near you and, on pickup, sings the owl's song before a 200-block apocalypse. Craft a deck to hand out the curse.",
+  "authors": [],
+  "contact": {},
+  "license": "All-Rights-Reserved",
+  "icon": "assets/owl_on_a_jump_rope/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "fabric-datagen": [
+      "site.deforce.owl_on_a_jump_rope.client.Owl_on_a_jump_ropeDataGenerator"
+    ],
+    "client": [
+      "site.deforce.owl_on_a_jump_rope.client.Owl_on_a_jump_ropeClient"
+    ],
+    "main": [
+      "site.deforce.owl_on_a_jump_rope.Owl_on_a_jump_rope"
+    ]
+  },
+  "mixins": [
+    "owl_on_a_jump_rope.mixins.json",
+    {
+      "config": "owl_on_a_jump_rope.client.mixins.json",
+      "environment": "client"
+    }
+  ],
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric-api": "*",
+    "minecraft": "${minecraft_version}"
+  }
+}

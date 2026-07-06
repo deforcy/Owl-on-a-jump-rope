@@ -1,0 +1,11 @@
+{
+  "sova_na_skakalke": {
+    "category": "master",
+    "sounds": [
+      {
+        "name": "owl_on_a_jump_rope:sova_na_skakalke",
+        "stream": true
+      }
+    ]
+  }
+}

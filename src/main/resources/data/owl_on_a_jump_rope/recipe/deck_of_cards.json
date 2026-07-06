@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "PPP",
+    "PBP",
+    "PPP"
+  ],
+  "key": {
+    "P": "minecraft:paper",
+    "B": "minecraft:book"
+  },
+  "result": {
+    "id": "owl_on_a_jump_rope:deck_of_cards",
+    "count": 1
+  }
+}
