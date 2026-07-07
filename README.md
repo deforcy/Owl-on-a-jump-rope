@@ -17,6 +17,6 @@ This mod adds two items (for now):
 
 <div align="center">
   
-Need help? join [discord](https://discord.gg/ehBR2f4ufD)
+Need help? we will provide discord server link soon
 
 </div>
