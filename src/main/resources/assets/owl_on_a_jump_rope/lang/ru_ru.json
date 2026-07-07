@@ -1,4 +1,5 @@
 {
   "item.owl_on_a_jump_rope.owl_card": "Сова на скакалке",
-  "item.owl_on_a_jump_rope.deck_of_cards": "Колода карт"
+  "item.owl_on_a_jump_rope.deck_of_cards": "Колода карт",
+  "message.owl_on_a_jump_rope.missing_server_mod": "На этом сервере не установлен мод «Сова на скакалке». Мод здесь работать не будет."
 }
