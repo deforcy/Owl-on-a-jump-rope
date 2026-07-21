@@ -38,6 +38,14 @@ public class Owl_on_a_jump_ropeClient implements ClientModInitializer {
             });
         });
 
+        ClientPlayNetworking.registerGlobalReceiver(OwlNetworking.SavePayload.TYPE, (payload, context) -> {
+            Minecraft client = context.client();
+            client.execute(() -> UnoReverseSave.trigger(client));
+        });
+
+        ClientPlayNetworking.registerGlobalReceiver(OwlNetworking.SoftFlashPayload.TYPE, (payload, context) ->
+                context.client().execute(NukeFlash::startSoft));
+
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
             // No handshake receiver on the server means it doesn't have the mod.
             if (!ClientPlayNetworking.canSend(OwlNetworking.HandshakePayload.TYPE)) {

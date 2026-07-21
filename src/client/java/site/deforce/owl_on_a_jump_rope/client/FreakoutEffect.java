@@ -34,6 +34,12 @@ public final class FreakoutEffect {
         CameraShake.start(DURATION);
     }
 
+    /** Immediately drop the post-process chain and go dormant (used when an uno-reverse cancels the doom). */
+    public static void stop() {
+        elapsed = -1;
+        Minecraft.getInstance().gameRenderer.clearPostEffect();
+    }
+
     private static void tick(Minecraft client) {
         if (elapsed < 0) {
             return;

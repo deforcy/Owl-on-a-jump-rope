@@ -37,6 +37,10 @@ public final class Blackout {
         ticks = 0;
     }
 
+    public static void stop() {
+        active = false;
+    }
+
     public static boolean active() {
         return active;
     }

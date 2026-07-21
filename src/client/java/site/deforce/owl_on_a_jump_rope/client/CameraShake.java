@@ -33,6 +33,10 @@ public final class CameraShake {
         ticksLeft = durationTicks;
     }
 
+    public static void stop() {
+        ticksLeft = 0;
+    }
+
     public static boolean active() {
         return ticksLeft > 0;
     }

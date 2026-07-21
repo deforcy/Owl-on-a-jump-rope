@@ -72,11 +72,41 @@ public final class OwlNetworking {
         }
     }
 
+    /** Sent when an uno-reverse card saves a doomed player: the client undoes the doom visuals. */
+    public record SavePayload() implements CustomPacketPayload {
+        public static final CustomPacketPayload.Type<SavePayload> TYPE =
+                new CustomPacketPayload.Type<>(
+                        Identifier.fromNamespaceAndPath(Owl_on_a_jump_rope.MOD_ID, "save"));
+        public static final StreamCodec<RegistryFriendlyByteBuf, SavePayload> CODEC =
+                StreamCodec.unit(new SavePayload());
+
+        @Override
+        public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
+    /** Sent with the reverse's second sting: the client eases a soft white flash over the animation's tail. */
+    public record SoftFlashPayload() implements CustomPacketPayload {
+        public static final CustomPacketPayload.Type<SoftFlashPayload> TYPE =
+                new CustomPacketPayload.Type<>(
+                        Identifier.fromNamespaceAndPath(Owl_on_a_jump_rope.MOD_ID, "soft_flash"));
+        public static final StreamCodec<RegistryFriendlyByteBuf, SoftFlashPayload> CODEC =
+                StreamCodec.unit(new SoftFlashPayload());
+
+        @Override
+        public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
     public static void registerCommon() {
         PayloadTypeRegistry.serverboundPlay().register(HandshakePayload.TYPE, HandshakePayload.CODEC);
         PayloadTypeRegistry.clientboundPlay().register(CardPopupPayload.TYPE, CardPopupPayload.CODEC);
         PayloadTypeRegistry.clientboundPlay().register(FlashPayload.TYPE, FlashPayload.CODEC);
         PayloadTypeRegistry.clientboundPlay().register(BlackoutPayload.TYPE, BlackoutPayload.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(SavePayload.TYPE, SavePayload.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(SoftFlashPayload.TYPE, SoftFlashPayload.CODEC);
     }
 
     public static void sendCardPopup(ServerPlayer victim, int durationTicks) {
@@ -89,6 +119,14 @@ public final class OwlNetworking {
 
     public static void sendBlackout(ServerPlayer player) {
         ServerPlayNetworking.send(player, new BlackoutPayload());
+    }
+
+    public static void sendSave(ServerPlayer player) {
+        ServerPlayNetworking.send(player, new SavePayload());
+    }
+
+    public static void sendSoftFlash(ServerPlayer player) {
+        ServerPlayNetworking.send(player, new SoftFlashPayload());
     }
 
     public static void registerServer() {

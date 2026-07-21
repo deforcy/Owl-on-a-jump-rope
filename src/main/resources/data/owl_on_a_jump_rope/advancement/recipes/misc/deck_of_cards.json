@@ -1,0 +1,33 @@
+{
+  "parent": "minecraft:recipes/root",
+  "criteria": {
+    "has_paper": {
+      "trigger": "minecraft:inventory_changed",
+      "conditions": {
+        "items": [
+          { "items": "minecraft:paper" }
+        ]
+      }
+    },
+    "has_book": {
+      "trigger": "minecraft:inventory_changed",
+      "conditions": {
+        "items": [
+          { "items": "minecraft:book" }
+        ]
+      }
+    },
+    "has_the_recipe": {
+      "trigger": "minecraft:recipe_unlocked",
+      "conditions": {
+        "recipe": "owl_on_a_jump_rope:deck_of_cards"
+      }
+    }
+  },
+  "requirements": [
+    ["has_paper", "has_book", "has_the_recipe"]
+  ],
+  "rewards": {
+    "recipes": ["owl_on_a_jump_rope:deck_of_cards"]
+  }
+}

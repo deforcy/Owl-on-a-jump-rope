@@ -5,6 +5,7 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.network.protocol.game.ClientboundSoundPacket;
+import net.minecraft.network.protocol.game.ClientboundStopSoundPacket;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -12,6 +13,7 @@ import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.DamageTypeTags;
 import net.minecraft.util.Mth;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.LightningBolt;
@@ -30,6 +32,7 @@ import java.util.List;
 import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 /**
  * Owns the death sequence: pick up a card, the card locks into the victim's hand while the jingle
@@ -61,11 +64,24 @@ public final class DeathManager {
     private static final int CARVE_FLAGS = Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE;
     // -----------------------------------------------------------------------
 
+    // ---- Uno-reverse rescue tuning ----------------------------------------
+    // How long after pickup a doomed player can still be saved by equipping an uno-reverse card:
+    // the full jingle plus the whole bombardment, so "at any moment" really means any moment.
+    private static final int SAVE_WINDOW_TICKS = ModSounds.SOVA_LENGTH_TICKS + BOMBARDMENT_TICKS;
+    // Gap between the reverse's two stings (respawn-anchor charge -> totem use). Exactly two seconds.
+    private static final int SECOND_STING_DELAY = 40;
+    // Client soft-flash fade-in length (must match NukeFlash.SOFT_FADE_IN). The flash is launched this
+    // many ticks early so it reaches full white exactly as the second sting lands.
+    private static final int FLASH_FADE_IN_TICKS = 4;
+    // -----------------------------------------------------------------------
+
     private static final BlockState AIR = Blocks.AIR.defaultBlockState();
     private static final Random RANDOM = new Random();
 
     private static final List<Countdown> COUNTDOWNS = new ArrayList<>();
     private static final List<Apocalypse> ACTIVE = new ArrayList<>();
+    private static final List<Doomed> DOOMED = new ArrayList<>();
+    private static final List<Scheduled> SCHEDULED = new ArrayList<>();
 
     private static final class Countdown {
         final ServerPlayer victim;
@@ -77,9 +93,34 @@ public final class DeathManager {
         }
     }
 
+    /** Watches a doomed player for the whole doom, ready to reverse it the instant they equip a save card. */
+    private static final class Doomed {
+        final ServerPlayer victim;
+        int ticksLeft;
+
+        Doomed(ServerPlayer victim, int ticksLeft) {
+            this.victim = victim;
+            this.ticksLeft = ticksLeft;
+        }
+    }
+
+    /** A deferred action fired on a future tick (the reverse stages its flash and second sting this way). */
+    private static final class Scheduled {
+        final ServerPlayer target;
+        int ticksLeft;
+        final Consumer<ServerPlayer> action;
+
+        Scheduled(ServerPlayer target, int ticksLeft, Consumer<ServerPlayer> action) {
+            this.target = target;
+            this.ticksLeft = ticksLeft;
+            this.action = action;
+        }
+    }
+
     /** A destruction front sweeping along a straight line through the victim. */
     private static final class Apocalypse {
         final ServerLevel level;
+        final ServerPlayer victim; // who set it off; used to reverse it if they save themselves
         final Vec3 center;   // line's midpoint: victim's position at the moment of doom
         final double dirX;   // unit heading of the line (victim's facing)
         final double dirZ;
@@ -88,8 +129,9 @@ public final class DeathManager {
         final Set<UUID> notified = new HashSet<>();
         int age;
 
-        Apocalypse(ServerLevel level, Vec3 center, double dirX, double dirZ) {
+        Apocalypse(ServerLevel level, ServerPlayer victim, Vec3 center, double dirX, double dirZ) {
             this.level = level;
+            this.victim = victim;
             this.center = center;
             this.dirX = dirX;
             this.dirZ = dirZ;
@@ -125,6 +167,7 @@ public final class DeathManager {
         lockCardInHand(victim);
 
         COUNTDOWNS.add(new Countdown(victim, ModSounds.SOVA_LENGTH_TICKS));
+        DOOMED.add(new Doomed(victim, SAVE_WINDOW_TICKS));
     }
 
     /**
@@ -137,6 +180,10 @@ public final class DeathManager {
         ItemStack held = inv.getItem(slot);
 
         if (held.getItem() == ModItems.OWL_CARD) {
+            return;
+        }
+        // Never weld over a save card: selecting it is how the victim escapes (see the doom watch in tick()).
+        if (held.getItem() == ModItems.UNO_REVERSE_CARD) {
             return;
         }
         if (held.isEmpty()) {
@@ -161,7 +208,93 @@ public final class DeathManager {
         }
     }
 
+    private static boolean isHoldingSaveCard(ServerPlayer victim) {
+        return victim.getItemInHand(InteractionHand.MAIN_HAND).getItem() == ModItems.UNO_REVERSE_CARD
+                || victim.getItemInHand(InteractionHand.OFF_HAND).getItem() == ModItems.UNO_REVERSE_CARD;
+    }
+
+    /**
+     * Undoes an in-progress doom for a victim who equipped a save card: stops the countdown and any live
+     * bombardment, cleans up the welded cards, spends one uno-reverse card, and fires the reverse's
+     * "no shaders, no destruction" client cue plus its two stings (charge now, totem use one second later).
+     */
+    private static void reverseDoom(ServerPlayer victim) {
+        for (int i = COUNTDOWNS.size() - 1; i >= 0; i--) {
+            if (COUNTDOWNS.get(i).victim == victim) {
+                COUNTDOWNS.remove(i);
+            }
+        }
+        for (int i = ACTIVE.size() - 1; i >= 0; i--) {
+            if (ACTIVE.get(i).victim == victim) {
+                ACTIVE.remove(i);
+            }
+        }
+
+        clearCards(victim);
+        consumeOneSaveCard(victim);
+
+        // Silence the owl's still-playing jingle for the survivor.
+        victim.connection.send(new ClientboundStopSoundPacket(ModSounds.SOVA_ID, SoundSource.MASTER));
+        // Cancel the shaders/flash/shake on the client and play the uno-reverse totem animation.
+        OwlNetworking.sendSave(victim);
+        // First stings immediately: the anchor charge plus the warden's sonic boom.
+        playSting(victim, SoundEvents.RESPAWN_ANCHOR_CHARGE, 1.0F, 0.5F);
+        playSting(victim, SoundEvents.WARDEN_SONIC_CHARGE, 1.0F, 1.0F);
+        // Launch the soft flash early so its fade-in finishes right as the second sting fires...
+        schedule(victim, SECOND_STING_DELAY - FLASH_FADE_IN_TICKS, OwlNetworking::sendSoftFlash);
+        // ...and the second sting lands on the fully-white frame.
+        schedule(victim, SECOND_STING_DELAY, p -> playSting(p, SoundEvents.TOTEM_USE, 1.0F, 1.2F));
+    }
+
+    private static void schedule(ServerPlayer target, int ticks, Consumer<ServerPlayer> action) {
+        SCHEDULED.add(new Scheduled(target, ticks, action));
+    }
+
+    private static void consumeOneSaveCard(ServerPlayer victim) {
+        Inventory inv = victim.getInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            ItemStack stack = inv.getItem(i);
+            if (stack.getItem() == ModItems.UNO_REVERSE_CARD) {
+                stack.shrink(1);
+                return;
+            }
+        }
+    }
+
+    private static void playSting(ServerPlayer p, net.minecraft.sounds.SoundEvent sound, float volume, float pitch) {
+        p.connection.send(new ClientboundSoundPacket(
+                Holder.direct(sound), SoundSource.MASTER, p.getX(), p.getY(), p.getZ(), volume, pitch, 0L));
+    }
+
     private static void tick(MinecraftServer server) {
+        // Save watch: run before the countdown re-welds the card, so equipping a save card wins the tick.
+        for (int i = DOOMED.size() - 1; i >= 0; i--) {
+            Doomed d = DOOMED.get(i);
+            if (d.victim.isRemoved()) {
+                DOOMED.remove(i);
+                continue;
+            }
+            if (isHoldingSaveCard(d.victim)) {
+                DOOMED.remove(i);
+                reverseDoom(d.victim);
+                continue;
+            }
+            if (--d.ticksLeft <= 0) {
+                DOOMED.remove(i);
+            }
+        }
+
+        // Staged pieces of a completed reverse (the soft flash, then the second sting).
+        for (int i = SCHEDULED.size() - 1; i >= 0; i--) {
+            Scheduled s = SCHEDULED.get(i);
+            if (--s.ticksLeft <= 0) {
+                SCHEDULED.remove(i);
+                if (!s.target.isRemoved()) {
+                    s.action.accept(s.target);
+                }
+            }
+        }
+
         for (int i = COUNTDOWNS.size() - 1; i >= 0; i--) {
             Countdown c = COUNTDOWNS.get(i);
             c.ticksLeft--;
@@ -178,7 +311,7 @@ public final class DeathManager {
                     double yawRad = Math.toRadians(c.victim.getYRot());
                     double dirX = -Math.sin(yawRad);
                     double dirZ = Math.cos(yawRad);
-                    ACTIVE.add(new Apocalypse(sw, c.victim.position(), dirX, dirZ));
+                    ACTIVE.add(new Apocalypse(sw, c.victim, c.victim.position(), dirX, dirZ));
                 }
             }
         }
@@ -191,6 +324,34 @@ public final class DeathManager {
                 ACTIVE.remove(i);
             }
         }
+
+        // The owl card never sits in a player's inventory except while they're already doomed (it's
+        // welded into their hand during the countdown). So a non-doomed player who suddenly holds one
+        // must have just taken it - from the mod's creative tab, a /give, whatever - and the curse begins.
+        for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+            if (!isDoomed(p) && hasOwlCard(p)) {
+                startDeath(p);
+            }
+        }
+    }
+
+    private static boolean isDoomed(ServerPlayer p) {
+        for (Doomed d : DOOMED) {
+            if (d.victim == p) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasOwlCard(ServerPlayer p) {
+        Inventory inv = p.getInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            if (inv.getItem(i).getItem() == ModItems.OWL_CARD) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static void runApocalypseTick(Apocalypse a) {
